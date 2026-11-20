@@ -6,12 +6,12 @@ preview.py —— 在 PC 上复刻 calendar.c 的横向版式（250x122），烧
 字体和固件里用的是同一份 u8g2 字体（src/font_u8g2.c，见 tools/u8g2_py.py）：
   wqy9  文泉驿点阵宋 Bold 12px —— 表头/干支/农历/周
   wqy12 文泉驿点阵宋 Bold 16px —— 月字（大一点）
-  helvB14 Helvetica Bold 14px —— 日期/电压/周数
+  helvB14 Helvetica Bold 14px —— 日期/周数
   helvB18 Helvetica Bold 18px —— 年份/公历月
 
 用法：
   python tools/preview.py
-  python tools/preview.py --date 2026-11-19 --mv 2920
+  python tools/preview.py --date 2026-11-19 --out out\\pv.png
 """
 import argparse
 import datetime
@@ -64,17 +64,6 @@ class Canvas:
     def text_l(self, font, x, baseline, s, c, bold=False):
         return draw_text(self, font, x, baseline, s, c, bold)
 
-    def batt(self, x, y, mv):
-        w, h = 22, 9
-        self.fill(x, y, w, h, BLACK)
-        self.fill(x + 1, y + 1, w - 2, h - 2, WHITE)
-        self.fill(x + w, y + 2, 2, h - 4, BLACK)
-        if mv:
-            pct = max(0, min(100, (mv - 2400) * 100 // 800))
-            fw = (w - 4) * pct // 100
-            if fw > 0:
-                self.fill(x + 2, y + 2, fw, h - 4, BLACK)
-
 
 def days_in_month(y, m):
     nxt = datetime.date(y + (m == 12), 1 if m == 12 else m + 1, 1)
@@ -97,15 +86,20 @@ def lunar_day_name(d):
     return "三十"
 
 
-def draw(epoch, mv=0, vbat_mix=True):
+def draw(epoch):
     local = epoch + TZ
     days = local // 86400
     dt = datetime.datetime(1970, 1, 1) + datetime.timedelta(days=days)
     y, m, d = dt.year, dt.month, dt.day
 
+    # 右栏三段基线，与 src/calendar.c 的 BASE_* 一一对应（没有电池电压那段）
+    base_year, base_ganzhi, line1 = 28, 42, 47
+    mon_base, base_lunar, line2 = 72, 86, 92
+    base_week = 110
+
     # 版式固定（与 src/calendar.c 完全一致）：表头 16px，公历月 18px + 16px 月字
     hdr_font, hdr_h, grid_y = F12, HEAD_H, GRID_Y
-    mon_num, mon_yue, mon_base = F18, F12, 76   # BASE_MONTH
+    mon_num, mon_yue = F18, F12
 
     ly_year, _, _, _ = to_lunar(datetime.date(y, m, d))
 
@@ -141,24 +135,8 @@ def draw(epoch, mv=0, vbat_mix=True):
     # ---------------- 竖线 ----------------
     c.fill(SEP_X, MARGIN, 1, CAL_H - 2 * MARGIN, BLACK)
 
-    # ---------------- 电池电压 + 图标 ----------------
-    # Helvetica Bold 子集没有字母 V，所以数字用 helvB14，"V" 用 wqy9（基线对齐）
-    if not mv:                                  # 没读到电：只显示 --.-，不画图标
-        c.text_c(F14, PANEL_L + PANEL_W // 2, 17, "--.-", BLACK)
-    else:
-        num = "%d.%d" % (mv // 1000, (mv // 100) % 10)
-        nw = F14.width(num)
-        vw = F9.width("V")
-        tw = nw + vw + 1
-        total = tw + 5 + 22
-        x = PANEL_L + (PANEL_W - total) // 2
-        c.text_l(F14, x, 17, num, BLACK)
-        c.text_l(F9, x + nw + 1, 17, "V", BLACK)
-        c.batt(x + tw + 5, 7, mv)
-    c.fill(SEP_X, 21, LINE_W, 1, BLACK)
-
     # ---------------- 年份（红，Helvetica 18） ----------------
-    c.text_c(F18, PANEL_L + PANEL_W // 2, 40, str(y), RED)
+    c.text_c(F18, PANEL_L + PANEL_W // 2, base_year, str(y), RED)
 
     # ---------------- 干支生肖（黑，12px，按农历年推） ----------------
     STEM, BRANCH = "甲乙丙丁戊己庚辛壬癸", "子丑寅卯辰巳午未申酉戌亥"
@@ -166,8 +144,8 @@ def draw(epoch, mv=0, vbat_mix=True):
     ly = ly_year if ly_year else y
     k = (ly - 4) % 60
     gz = STEM[k % 10] + BRANCH[k % 12] + ZODIAC[k % 12] + "年"
-    c.text_c(F9, PANEL_L + PANEL_W // 2, 52, gz, BLACK)
-    c.fill(SEP_X, 56, LINE_W, 1, BLACK)
+    c.text_c(F9, PANEL_L + PANEL_W // 2, base_ganzhi, gz, BLACK)
+    c.fill(SEP_X, line1, LINE_W, 1, BLACK)
 
     # ---------------- 公历月（红） ----------------
     num = str(m)
@@ -181,8 +159,8 @@ def draw(epoch, mv=0, vbat_mix=True):
     ly, lm, ldd, leap = to_lunar(datetime.date(y, m, d))
     ls = ("闰" if leap else "") + lunar_month_name(lm) + "月" + lunar_day_name(ldd)
     lw = F9.width(ls)
-    c.text_l(F9, PANEL_L + (PANEL_W - lw) // 2, 89, ls, BLACK)
-    c.fill(SEP_X, 92, LINE_W, 1, BLACK)
+    c.text_l(F9, PANEL_L + (PANEL_W - lw) // 2, base_lunar, ls, BLACK)
+    c.fill(SEP_X, line2, LINE_W, 1, BLACK)
 
     # ---------------- 第几周 ----------------
     jan1 = days - (dt.timetuple().tm_yday - 1)
@@ -190,8 +168,8 @@ def draw(epoch, mv=0, vbat_mix=True):
     zhou = "周" + str(wk)
     zw = F9.width("周") + F14.width(str(wk))
     zx = PANEL_L + (PANEL_W - zw) // 2
-    c.text_l(F9, zx, 110, "周", BLACK)
-    c.text_l(F14, zx + F9.width("周"), 110, str(wk), BLACK)
+    c.text_l(F9, zx, base_week, "周", BLACK)
+    c.text_l(F14, zx + F9.width("周"), base_week, str(wk), BLACK)
 
     return c.im, (y, m, d, lm, ldd)
 
@@ -201,7 +179,6 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--epoch", type=int, default=None)
     ap.add_argument("--date", default=None)
-    ap.add_argument("--mv", type=int, default=0)
     ap.add_argument("--out", default=None)
     a = ap.parse_args()
 
@@ -213,7 +190,7 @@ def main():
         epoch = int((dt - datetime.datetime(1970, 1, 1)).total_seconds()) - TZ
 
     out = a.out or os.path.join(here, "..", "out", "calendar_preview.png")
-    im, info = draw(epoch, a.mv)
+    im, info = draw(epoch)
     os.makedirs(os.path.dirname(out), exist_ok=True)
     im.resize((CAL_W * 3, CAL_H * 3), Image.NEAREST).save(out)
     print("wrote", os.path.abspath(out))

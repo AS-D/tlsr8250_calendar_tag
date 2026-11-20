@@ -3,7 +3,7 @@
  * @brief   本工程自己的最小 BLE 从机实现
  *
  * 与 SDK demo（vendor/acl_peripheral_demo）的区别：
- *   · 只初始化「从机 + 可连接广播」，不初始化主机角色、OTA、HID、电池服务
+ *   · 只初始化「从机 + 可连接广播」，不初始化主机角色、OTA、HID
  *   · ATT 表只有两个服务：必需的 GAP + 一个自定义"对时"服务（UUID 沿用 Telink SPP，
  *     所以老的 tools/set_time.py 和手机 nRF Connect 的步骤都不用改）
  *   · 不做配对（特征权限不含加密位），手机连上就能直接写

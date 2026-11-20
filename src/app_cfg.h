@@ -36,7 +36,6 @@
 /* ── 本工程不需要的功能，全部关掉（省 flash、省电、少依赖）─────────────── */
 #define BLE_OTA_SERVER_ENABLE           0
 #define BLE_OTA_CLIENT_ENABLE           0
-#define APP_BATT_CHECK_ENABLE           0
 #define APP_FLASH_PROTECTION_ENABLE     0
 #define UI_LED_ENABLE                   0
 #define UI_KEYBOARD_ENABLE              0
@@ -54,7 +53,6 @@
 #define APP_OTA_LOG_EN                  0
 #define APP_FLASH_INIT_LOG_EN           0
 #define APP_FLASH_PROT_LOG_EN           0
-#define APP_BATT_CHECK_LOG_EN           0
 
 /* ── 应用行为开关（省电就改这几个）─────────────────────────────────────── */
 /* 上电是否立刻刷一次屏。
@@ -64,7 +62,7 @@
 #define CFG_BOOT_REFRESH        0
 
 /* 调试灯（PB4 红 / PB5 绿 / PC4 蓝，共阳低电平点亮）。
- * 0 = 全部熄灭且不闪，省电；1 = 开机用闪灯报电压和刷屏结果。 */
+ * 0 = 全部熄灭且不闪，省电；1 = 开机用闪灯报刷屏结果。 */
 #define CFG_LED_DEBUG           0
 
 /* 跨天是否自动刷一次屏。
@@ -72,8 +70,6 @@
  * 0 = 不刷，只在 BLE 对时后刷（更省电，但高亮会停在最后一次刷屏那天）*/
 #define CFG_DAY_REFRESH         1
 
-/* 刷屏时是否读一次电池电压显示在屏上（读一次约 1ms，几乎不耗电）*/
-#define CFG_BATT_SHOW           1
 /* 广播名（手机/网关按这个名字搜）。实际字符列表在 ble_app.c 的 ADV_NAME_CHARS，
  * 这个宏只给 README / PC 端脚本做对照，改名字要两处一起改。 */
 #define CFG_ADV_NAME            "calendar_tag"
@@ -83,9 +79,11 @@
  * 中国 = 8。*/
 #define CFG_TZ_HOURS            8
 
-/* 广播间隔（单位 0.625ms，30 = 18.75ms）。越大越省电，但连接建立越慢。
- * 上线可改 160（100ms）或 320（200ms）。 */
-#define CFG_ADV_INTERVAL        60
+/* 广播间隔（单位 0.625ms）。320 = 200ms —— 广播占空比是这颗片子的主要功耗项，
+ * 200ms 比 37.5ms（60）省约 3 倍，估算待机寿命从 ~7 个月拉到 ~1.8 年。
+ * 代价：手机扫描发现它最多慢 0.2 秒，连上就停播，不影响对时。
+ * 想更快被发现可改 160（100ms，约 14 个月）；想更省可改 480（300ms）。 */
+#define CFG_ADV_INTERVAL        320
 
 /* SDK 公共默认配置（boards、DBG_CHN 宏、PM 默认值等）*/
 #include "default_config.h"

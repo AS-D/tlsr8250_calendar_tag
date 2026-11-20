@@ -9,15 +9,14 @@
  *   3..171     日历网格：7 列 × 24px，表头 16px 高，最多 6 行日期每行 17px
  *   173        竖向分隔线
  *   175..247   右侧信息栏（全部居中）：
- *               顶部  电池电压 + 图标
  *               2026（红，18px） / 丙午马年（黑 12px）
  *               11月（红，18px + 16px 月） / 十月十一（黑 12px）
  *               周47
  *
  * 字体：全部走 u8g2 字体（数据在 font_u8g2.c，移植自 ink-tag 工程）
- *   wqy9  (12px) 文泉驿点阵宋 Bold —— 表头、干支、农历、周、电压的 V
+ *   wqy9  (12px) 文泉驿点阵宋 Bold —— 表头、干支、农历、周
  *   wqy12 (16px) 同上              —— 表头、月字
- *   helvB14       Helvetica Bold   —— 日期、电压数字、周数数字
+ *   helvB14       Helvetica Bold   —— 日期、周数数字
  *   helvB18       Helvetica Bold   —— 年份、公历月数字
  * 用比例字宽后，居中要按实际字宽算（text_w），不能再按固定字宽累加。
  */
@@ -26,7 +25,6 @@
 #include "font_u8g2.h"
 #include "calendar.h"
 #include "lunar.h"
-#include "batt.h"
 
 #define CAL_W     250
 #define CAL_H     122
@@ -52,11 +50,15 @@
 
 /* 各栏基线（y 坐标，字体按基线对齐） */
 #define BASE_HEAD   17
-#define BASE_BATT   17
-#define BASE_YEAR   40
-#define BASE_GANZHI 52
-#define BASE_MONTH  76
-#define BASE_LUNAR  89
+
+/* 右栏三段：年份+干支 / 公历月+农历 / 周数，两根横线分开。
+ * 不画电池：这块板是 2×CR2450 并联，放电平台极平（长期 3.0V），读数没信息量。 */
+#define BASE_YEAR   28
+#define BASE_GANZHI 42
+#define LINE1_Y     47
+#define BASE_MONTH  72
+#define BASE_LUNAR  86
+#define LINE2_Y     92
 #define BASE_WEEK   110
 
 /* ------------------------------------------------------------------------- */
@@ -284,52 +286,6 @@ static int days_in_month(int y, int m)
 /* 信息栏各条目                                                               */
 /* ------------------------------------------------------------------------- */
 
-/* 电压 + 电池图标（Helvetica 子集没有字母 V，V 用 wqy9 画，基线对齐） */
-static void put_batt(int mv)
-{
-    char num[6];
-    int nw, vw, total, x;
-
-    if (!mv) {                                   /* 没读到电：只显示 --.-，不画图标 */
-        font_set(F_DIG);
-        text_center("--.-", PANEL_L + PANEL_W / 2, BASE_BATT, GFX_BLACK);
-        return;
-    }
-
-    fmt_int(num, mv / 1000, 1);
-    s_cat(num, ".");
-    fmt_int(num + s_len(num), (mv / 100) % 10, 1);
-
-    font_set(F_DIG);
-    nw = text_w(num);
-    font_set(F_SMALL);
-    vw = text_w("V");
-
-    total = nw + vw + 1 + 5 + 22;
-    x = PANEL_L + (PANEL_W - total) / 2;
-
-    font_set(F_DIG);
-    text_at(num, x, BASE_BATT, GFX_BLACK);
-    font_set(F_SMALL);
-    text_at("V", x + nw + 1, BASE_BATT, GFX_BLACK);
-
-    /* 电池图标 */
-    {
-        int ix = x + nw + vw + 1 + 5, iy = 7;
-        int iw = 22, ih = 9;
-        lfill(ix, iy, iw, ih, GFX_BLACK);
-        lfill(ix + 1, iy + 1, iw - 2, ih - 2, GFX_WHITE);
-        lfill(ix + iw, iy + 2, 2, ih - 4, GFX_BLACK);
-        if (mv) {
-            int pct = (mv - 2400) * 100 / 800;
-            int fw;
-            if (pct < 0) pct = 0;
-            if (pct > 100) pct = 100;
-            fw = (iw - 4) * pct / 100;
-            if (fw > 0) lfill(ix + 2, iy + 2, fw, ih - 4, GFX_BLACK);
-        }
-    }
-}
 
 /* 公历月：大号数字 + 16px 月字，整体居中 */
 static void put_month(int m)
@@ -446,9 +402,6 @@ void calendar_draw(unsigned int epoch)
     /* ---------------- 右侧信息栏（全居中） ---------------- */
     lfill(SEP_X, MARGIN, 1, CAL_H - 2 * MARGIN, GFX_BLACK);   /* 竖向分隔线 */
 
-    put_batt(batt_mv());
-    lfill(SEP_X, 21, LINE_W, 1, GFX_BLACK);
-
     /* 年份（红，Helvetica Bold 18） */
     fmt_int(num, y, 4);
     font_set(F_BIG);
@@ -469,14 +422,14 @@ void calendar_draw(unsigned int epoch)
         font_set(F_SMALL);
         text_center(gz, PANEL_L + PANEL_W / 2, BASE_GANZHI, GFX_BLACK);
     }
-    lfill(SEP_X, 56, LINE_W, 1, GFX_BLACK);
+    lfill(SEP_X, LINE1_Y, LINE_W, 1, GFX_BLACK);
 
     /* 公历月（红） */
     put_month(m);
 
     /* 农历（黑色小字，居中） */
     if (ld.month) put_lunar(&ld);
-    lfill(SEP_X, 92, LINE_W, 1, GFX_BLACK);
+    lfill(SEP_X, LINE2_Y, LINE_W, 1, GFX_BLACK);
 
     /* 本年第几周 */
     {
