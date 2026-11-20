@@ -9,9 +9,11 @@
 #ifndef __CALENDAR_H__
 #define __CALENDAR_H__
 
+#include "app_cfg.h"
+
 /* 时区偏移（秒）。时间基准是 UTC，显示时加这个。
- * 中国 +8 小时 = 28800。*/
-#define CAL_TZ_OFFSET   28800u
+ * 值来自 app_cfg.h 的 CFG_TZ_HOURS，和跨天判断用的是同一个 —— 显示与逻辑不会打架。*/
+#define CAL_TZ_OFFSET   ((unsigned int)(CFG_TZ_HOURS * 3600))
 
 /* 把 epoch（UTC 秒）换算成当地时间后画月历 */
 void calendar_draw(unsigned int epoch);

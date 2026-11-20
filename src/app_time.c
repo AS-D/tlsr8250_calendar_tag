@@ -11,23 +11,32 @@
  * 对月历完全够用。32 位 tick 约 268 秒回绕一次，用无符号减法自然处理。
  */
 #include "timer.h"
+#include "app_cfg.h"
 #include "app_time.h"
 
 #define TICKS_PER_SEC   16000000u
+
+/* 跨天必须按**当地日期**判：把 UTC 秒加上时区偏移再除以 86400。
+ * 否则 UTC 0 点（北京时间早上 8 点）才跨天，而屏上按 +8 显示已经变了日期，
+ * 两边就会差 8 小时不同步。时区只在 app_cfg.h 的 CFG_TZ_HOURS 定义一次。*/
+#define TZ_OFFSET_SEC   ((unsigned int)(CFG_TZ_HOURS * 3600))
+#define LOCAL_DAY(e)    (((e) + TZ_OFFSET_SEC) / 86400u)
 
 static unsigned int  s_epoch;      /* 当前 Unix 秒 */
 static unsigned int  s_last_tick;  /* 上次采样 */
 static unsigned int  s_frac;       /* 不足一秒的余量（tick） */
 static unsigned int  s_last_day;   /* 上次的"第几天"，用于判断跨天 */
 static unsigned char s_force;      /* 强制重画标志 */
+static unsigned char s_synced;     /* 是否被对时过：0 = 时间冻结在起点 */
 
 void app_time_init(unsigned int epoch)
 {
     s_epoch     = epoch;
     s_last_tick = clock_time();
     s_frac      = 0;
-    s_last_day  = epoch / 86400u;
+    s_last_day  = LOCAL_DAY(epoch);
     s_force     = 0;
+    s_synced    = 0;               /* 开机之后、对时之前，时间不走 */
 }
 
 void app_time_set(unsigned int epoch)
@@ -35,13 +44,19 @@ void app_time_set(unsigned int epoch)
     s_epoch     = epoch;
     s_last_tick = clock_time();
     s_frac      = 0;
-    s_last_day  = epoch / 86400u;
+    s_last_day  = LOCAL_DAY(epoch);
     s_force     = 1;               /* 对时后立刻重画 */
+    s_synced    = 1;               /* 从这一刻开始才走时、才判跨天 */
 }
 
 unsigned int app_time_now(void)
 {
     return s_epoch;
+}
+
+int app_time_is_synced(void)
+{
+    return s_synced;
 }
 
 void app_time_force_redraw(void)
@@ -57,6 +72,10 @@ int app_time_tick(void)
     dt  = now - s_last_tick;        /* 无符号减法，自动处理 32 位回绕 */
     s_last_tick = now;
 
+    /* 还没对过时：时间就冻结在起点，一秒都不加，也不判跨天。
+     * （这样上电后屏上一直是同一个日期，不会自己"跨天重画"）*/
+    if (!s_synced) return 0;
+
     s_frac += dt;
     secs = s_frac / TICKS_PER_SEC;
     if (secs) {
@@ -64,7 +83,7 @@ int app_time_tick(void)
         s_epoch += secs;
     }
 
-    day = s_epoch / 86400u;
+    day = LOCAL_DAY(s_epoch);
     if (day != s_last_day) {
         s_last_day = day;
         s_force = 0;

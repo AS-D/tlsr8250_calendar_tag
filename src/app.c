@@ -2,11 +2,13 @@
  * @file    app.c
  * @brief   应用逻辑：开机初始化、走时、何时刷屏
  *
- * 时间只在 RAM 里：起点是 BUILD_EPOCH（编译时刻），手机对时后从新值开始累加。
- * **不碰 flash** —— 断电重启就回到编译时刻，需要准就再对一次时。
+ * 时间线：
+ *   上电 → 设起点 BUILD_EPOCH，**但时间冻结不动**（app_time_tick 直接返回 0）
+ *   对时 → 从手机写进来的值开始每秒累加，从此才判跨天
+ *   **不碰 flash**，断电重启回到编译时刻
  *
  * 省电策略在 app_cfg.h 里开关（CFG_BOOT_REFRESH / CFG_LED_DEBUG / CFG_DAY_REFRESH）：
- * 默认：上电不刷屏、不闪灯；对时后刷一次；跨天再刷一次（保证"今天"跟着走）。
+ * 默认：上电不刷屏、不闪灯；对时后刷一次；之后每天跨天再刷一次。
  */
 #include "tl_common.h"
 #include "drivers.h"
@@ -70,7 +72,7 @@ void app_loop(void)
 {
     unsigned int pend = s_pending_epoch;
 
-    /* ① 刚被对时：设时间 -> 刷屏 */
+    /* ① 刚被对时：设时间（从此开始走时）-> 刷屏 */
     if (pend) {
         s_pending_epoch = 0;
         app_time_set(pend);
@@ -79,7 +81,7 @@ void app_loop(void)
         return;
     }
 
-    /* ② 走时：跨天（或手动要求重画）时把当天的月历刷上去 */
+    /* ② 只有对时过之后，这里才可能返回 1（跨天）；没对时过永远不刷屏 */
     if (app_time_tick()) {
 #if CFG_DAY_REFRESH
         app_refresh();
