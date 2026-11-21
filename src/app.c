@@ -41,7 +41,6 @@ static void epd_ensure_init(void)
 {
     if (s_epd_inited) return;
     s_epd_inited = 1;
-    EPD_SetCandidate(0);
     EPD_Init();
 }
 
@@ -57,7 +56,6 @@ void app_init(void)
 {
     /* 只把屏的引脚设成确定电平（避免浮空漏电），不发复位、不发初始化、更不刷屏。
      * 真正要刷的时候在 app_refresh() 里才 EPD_Init()。*/
-    EPD_SetCandidate(0);
     EPD_InitGpio();
 
     /* 时间起点就是编译时刻；不读 flash、不写 flash */
@@ -76,7 +74,6 @@ void app_loop(void)
     if (pend) {
         s_pending_epoch = 0;
         app_time_set(pend);
-        (void)app_time_tick();      /* 清掉"刚对时要重画"标志，避免重复刷 */
         app_refresh();
         return;
     }

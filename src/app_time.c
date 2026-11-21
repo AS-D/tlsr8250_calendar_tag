@@ -26,7 +26,6 @@ static unsigned int  s_epoch;      /* 当前 Unix 秒 */
 static unsigned int  s_last_tick;  /* 上次采样 */
 static unsigned int  s_frac;       /* 不足一秒的余量（tick） */
 static unsigned int  s_last_day;   /* 上次的"第几天"，用于判断跨天 */
-static unsigned char s_force;      /* 强制重画标志 */
 static unsigned char s_synced;     /* 是否被对时过：0 = 时间冻结在起点 */
 
 void app_time_init(unsigned int epoch)
@@ -35,7 +34,6 @@ void app_time_init(unsigned int epoch)
     s_last_tick = clock_time();
     s_frac      = 0;
     s_last_day  = LOCAL_DAY(epoch);
-    s_force     = 0;
     s_synced    = 0;               /* 开机之后、对时之前，时间不走 */
 }
 
@@ -45,23 +43,14 @@ void app_time_set(unsigned int epoch)
     s_last_tick = clock_time();
     s_frac      = 0;
     s_last_day  = LOCAL_DAY(epoch);
-    s_force     = 1;               /* 对时后立刻重画 */
     s_synced    = 1;               /* 从这一刻开始才走时、才判跨天 */
+    /* 对时后的重画由 app.c 直接调 app_refresh() 完成，不在这里挂标志：
+     * 原来那个 s_force 会被 app.c 紧接着的一次 tick 清掉，永远轮不到它生效。*/
 }
 
 unsigned int app_time_now(void)
 {
     return s_epoch;
-}
-
-int app_time_is_synced(void)
-{
-    return s_synced;
-}
-
-void app_time_force_redraw(void)
-{
-    s_force = 1;
 }
 
 int app_time_tick(void)
@@ -86,12 +75,7 @@ int app_time_tick(void)
     day = LOCAL_DAY(s_epoch);
     if (day != s_last_day) {
         s_last_day = day;
-        s_force = 0;
         return 1;                   /* 跨天了 */
-    }
-    if (s_force) {
-        s_force = 0;
-        return 1;                   /* 对时要求重画 */
     }
     return 0;
 }

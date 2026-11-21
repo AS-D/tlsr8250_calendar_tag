@@ -9,8 +9,9 @@
 #include "lunar.h"
 #include "lunar_table.h"
 
-/* 公历 (y,m,d) -> 1970-01-01 起的天数（Howard Hinnant） */
-static long days_from_civil(int y, int m, int d)
+/* 公历 (y,m,d) -> 1970-01-01 起的天数（Howard Hinnant）。
+ * 对外导出：calendar.c 算"第几周"也用它，避免同一个算法抄两份。*/
+long lunar_days_from_civil(int y, int m, int d)
 {
     long era;
     unsigned int yoe, doy, doe;
@@ -60,7 +61,7 @@ void lunar_from_solar(int y, int m, int d, lunar_date_t *out)
     if (y < LUNAR_BASE_YEAR || y > LUNAR_END_YEAR) return;
 
     /* 1900-01-31 是农历正月初一 */
-    offset = days_from_civil(y, m, d) - days_from_civil(1900, 1, 31);
+    offset = lunar_days_from_civil(y, m, d) - lunar_days_from_civil(1900, 1, 31);
 
     ly = LUNAR_BASE_YEAR;
     while (ly < LUNAR_END_YEAR && offset >= year_days(ly)) {

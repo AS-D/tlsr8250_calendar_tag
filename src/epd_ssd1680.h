@@ -44,11 +44,7 @@ typedef unsigned int   uint32_t;
 extern "C" {
 #endif
 
-/* ---- Runtime pin remapping (for the automatic pin-scan firmware) -------- */
-/* The on-tag panel is NOT wired like the Telink eval board.  These globals
- * let main.c try several candidate pin maps at runtime without recompiling.
- * Call EPD_SetCandidate() BEFORE EPD_Init() for each candidate.            */
-void     EPD_SetCandidate(int idx);
+/* 引脚是 epd_conf.h 的编译期宏，没有运行时重映射，也没有 EPD_SetCandidate。 */
 int      EPD_ReadBusyRaw(void);
 int      EPD_GetBusyTicks(void);   /* ms BUSY stayed active in last refresh */
 

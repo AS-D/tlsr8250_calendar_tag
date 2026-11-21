@@ -16,14 +16,11 @@
 #include <string.h>
 
 /* ------------------------------------------------------------------------- */
-/* Runtime pin map                                                            */
+/* Pin map                                                                    */
 /* ------------------------------------------------------------------------- */
-/* MEASURED pinout (2026-11-18) -- see epd_conf.h header for the full FPC pin
- * -> chip pin -> GPIO table, all cross-checked against the datasheet.  Only
- * ONE valid candidate exists now; the old blind-scan table is gone.          */
-static int g_pin_cs, g_pin_clk, g_pin_mosi, g_pin_dc, g_pin_rst, g_pin_busy;
-static int g_pin_bs1, g_pin_pwr;
-static int g_pwr_active, g_bs1_level, g_busy_active_high;
+/* 引脚全部是 epd_conf.h 里的编译期宏（2026-11-18 从价签 PCB 实测出来的，
+ * 完整 FPC pin -> chip pin -> GPIO 对照表见 epd_conf.h 头部）。
+ * 不再有"运行时候选表"：原来那套是在盲扫引脚时留下的，现在只有一种接法。*/
 
 /* BUSY wait tick counter -- how many ms the panel held BUSY active during the
  * last refresh.  main.c logs this: a plausible value (hundreds of ms) means
@@ -31,64 +28,31 @@ static int g_pwr_active, g_bs1_level, g_busy_active_high;
 static int g_busy_ticks = 0;
 int EPD_GetBusyTicks(void) { return g_busy_ticks; }
 
-typedef struct {
-    int cs, ck, mosi, dc, rst, busy, bs1, pwr;
-    int pwr_act;   /* level that turns panel power ON (0 or 1) */
-    int bs1_lv;    /* level selecting 4-wire SPI (usually 0)   */
-} EPD_Candidate;
-
-static const EPD_Candidate kCand[] = {
-    /* 0: MEASURED from the tag PCB. CS=PD2 CK=PD7 DO=PB7 DC=PD3
-     *    RST=PA1 BUSY=PA0. PWR/BS1 controlled by board hardware. */
-    { EPD_PIN_CS, EPD_PIN_CLK, EPD_PIN_MOSI, EPD_PIN_DC,
-      EPD_PIN_RST, EPD_PIN_BUSY, EPD_PIN_BS1, EPD_PIN_PWR,
-      EPD_PWR_ACTIVE_LEVEL, EPD_BS1_LEVEL },
-};
-#define EPD_CAND_COUNT  ((int)(sizeof(kCand)/sizeof(kCand[0])))
-
-void EPD_SetCandidate(int idx)
-{
-    if (idx < 0 || idx >= EPD_CAND_COUNT) idx = 0;
-    const EPD_Candidate *c = &kCand[idx];
-    g_pin_cs = c->cs;   g_pin_clk = c->ck;  g_pin_mosi = c->mosi;
-    g_pin_dc = c->dc;   g_pin_rst = c->rst; g_pin_busy = c->busy;
-    g_pin_bs1 = c->bs1; g_pin_pwr = c->pwr;
-    g_pwr_active = c->pwr_act; g_bs1_level = c->bs1_lv;
-    g_busy_active_high = EPD_BUSY_ACTIVE_HIGH;
-}
-
-/* Default = candidate 0, so normal builds behave exactly as before. */
-static int s_candidate_ready = 0;
-static void EPD_EnsureCandidate(void)
-{
-    if (!s_candidate_ready) { EPD_SetCandidate(0); s_candidate_ready = 1; }
-}
-
 /* ------------------------------------------------------------------------- */
 /* Low-level software SPI (bit-bang), mirrors original @0x9D98/0x9E20         */
 /* ------------------------------------------------------------------------- */
 
 _attribute_ram_code_
-static inline void EPD_CS_LOW(void)  { gpio_write((GPIO_PinTypeDef)g_pin_cs, 0); }
+static inline void EPD_CS_LOW(void)  { gpio_write(EPD_PIN_CS, 0); }
 _attribute_ram_code_
-static inline void EPD_CS_HIGH(void) { gpio_write((GPIO_PinTypeDef)g_pin_cs, 1); }
+static inline void EPD_CS_HIGH(void) { gpio_write(EPD_PIN_CS, 1); }
 _attribute_ram_code_
-static inline void EPD_DC_CMD(void)  { gpio_write((GPIO_PinTypeDef)g_pin_dc, 0); }
+static inline void EPD_DC_CMD(void)  { gpio_write(EPD_PIN_DC, 0); }
 _attribute_ram_code_
-static inline void EPD_DC_DATA(void) { gpio_write((GPIO_PinTypeDef)g_pin_dc, 1); }
+static inline void EPD_DC_DATA(void) { gpio_write(EPD_PIN_DC, 1); }
 
 _attribute_ram_code_
 void EPD_SPI_WriteByte(uint8_t v)
 {
     for (int i = 0; i < 8; i++) {
-        gpio_write((GPIO_PinTypeDef)g_pin_clk, 0);
-        gpio_write((GPIO_PinTypeDef)g_pin_mosi, (v & 0x80) ? 1 : 0);
+        gpio_write(EPD_PIN_CLK, 0);
+        gpio_write(EPD_PIN_MOSI, (v & 0x80) ? 1 : 0);
         v <<= 1;
         EPD_DELAY_US(EPD_SPI_DELAY_US);
-        gpio_write((GPIO_PinTypeDef)g_pin_clk, 1);
+        gpio_write(EPD_PIN_CLK, 1);
         EPD_DELAY_US(EPD_SPI_DELAY_US);
     }
-    gpio_write((GPIO_PinTypeDef)g_pin_clk, 0);
+    gpio_write(EPD_PIN_CLK, 0);
 }
 
 _attribute_ram_code_
@@ -122,15 +86,15 @@ void EPD_WriteDataBuf(const uint8_t *buf, int len)
 /* Returns the sampling pin level (raw). Used by the scan firmware to log. */
 int EPD_ReadBusyRaw(void)
 {
-    return gpio_read((GPIO_PinTypeDef)g_pin_busy) ? 1 : 0;
+    return gpio_read(EPD_PIN_BUSY) ? 1 : 0;
 }
 
 _attribute_ram_code_
 void EPD_WaitBusy(int max_ms)
 {
     g_busy_ticks = 0;
-    while (g_busy_active_high ? gpio_read((GPIO_PinTypeDef)g_pin_busy)
-                              : !gpio_read((GPIO_PinTypeDef)g_pin_busy)) {
+    while (EPD_BUSY_ACTIVE_HIGH ? gpio_read(EPD_PIN_BUSY)
+                              : !gpio_read(EPD_PIN_BUSY)) {
         EPD_DELAY_MS(1);
         g_busy_ticks++;
         if (--max_ms <= 0) break;
@@ -142,49 +106,48 @@ void EPD_WaitBusy(int max_ms)
 /* ------------------------------------------------------------------------- */
 void EPD_InitGpio(void)
 {
-    EPD_EnsureCandidate();
-    gpio_set_func((GPIO_PinTypeDef)g_pin_cs,   AS_GPIO);
-    gpio_set_func((GPIO_PinTypeDef)g_pin_clk,  AS_GPIO);
-    gpio_set_func((GPIO_PinTypeDef)g_pin_mosi, AS_GPIO);
-    gpio_set_func((GPIO_PinTypeDef)g_pin_dc,   AS_GPIO);
-    gpio_set_func((GPIO_PinTypeDef)g_pin_rst,  AS_GPIO);
-    gpio_set_func((GPIO_PinTypeDef)g_pin_busy, AS_GPIO);
+    gpio_set_func(EPD_PIN_CS,   AS_GPIO);
+    gpio_set_func(EPD_PIN_CLK,  AS_GPIO);
+    gpio_set_func(EPD_PIN_MOSI, AS_GPIO);
+    gpio_set_func(EPD_PIN_DC,   AS_GPIO);
+    gpio_set_func(EPD_PIN_RST,  AS_GPIO);
+    gpio_set_func(EPD_PIN_BUSY, AS_GPIO);
 
-    gpio_set_output_en((GPIO_PinTypeDef)g_pin_cs,   1);
-    gpio_set_output_en((GPIO_PinTypeDef)g_pin_clk,  1);
-    gpio_set_output_en((GPIO_PinTypeDef)g_pin_mosi, 1);
-    gpio_set_output_en((GPIO_PinTypeDef)g_pin_dc,   1);
-    gpio_set_output_en((GPIO_PinTypeDef)g_pin_rst,  1);
-    gpio_set_output_en((GPIO_PinTypeDef)g_pin_busy, 0);
-    gpio_set_input_en((GPIO_PinTypeDef)g_pin_busy,  1);
+    gpio_set_output_en(EPD_PIN_CS,   1);
+    gpio_set_output_en(EPD_PIN_CLK,  1);
+    gpio_set_output_en(EPD_PIN_MOSI, 1);
+    gpio_set_output_en(EPD_PIN_DC,   1);
+    gpio_set_output_en(EPD_PIN_RST,  1);
+    gpio_set_output_en(EPD_PIN_BUSY, 0);
+    gpio_set_input_en(EPD_PIN_BUSY,  1);
     /* Busy line must not float -- SDK uses a 1M pull-up. */
-    gpio_setup_up_down_resistor((GPIO_PinTypeDef)g_pin_busy, PM_PIN_PULLUP_1M);
+    gpio_setup_up_down_resistor(EPD_PIN_BUSY, PM_PIN_PULLUP_1M);
 
-    gpio_write((GPIO_PinTypeDef)g_pin_cs,  1);   /* CS idle high */
-    gpio_write((GPIO_PinTypeDef)g_pin_clk, 0);
-    gpio_write((GPIO_PinTypeDef)g_pin_mosi, 0);
+    gpio_write(EPD_PIN_CS,  1);   /* CS idle high */
+    gpio_write(EPD_PIN_CLK, 0);
+    gpio_write(EPD_PIN_MOSI, 0);
 
 #if EPD_USE_BS1_PIN
     /* BS1 selects the interface (LOW = 4-wire SPI on SSD1680/SSD1675). */
-    gpio_set_func((GPIO_PinTypeDef)g_pin_bs1, AS_GPIO);
-    gpio_set_output_en((GPIO_PinTypeDef)g_pin_bs1, 1);
-    gpio_set_input_en((GPIO_PinTypeDef)g_pin_bs1, 0);
-    gpio_write((GPIO_PinTypeDef)g_pin_bs1, g_bs1_level);
+    gpio_set_func(EPD_PIN_BS1, AS_GPIO);
+    gpio_set_output_en(EPD_PIN_BS1, 1);
+    gpio_set_input_en(EPD_PIN_BS1, 0);
+    gpio_write(EPD_PIN_BS1, EPD_BS1_LEVEL);
 #endif
 
 #if EPD_USE_PWR_PIN
-    gpio_set_func((GPIO_PinTypeDef)g_pin_pwr, AS_GPIO);
-    gpio_set_output_en((GPIO_PinTypeDef)g_pin_pwr, 1);
-    gpio_write((GPIO_PinTypeDef)g_pin_pwr, g_pwr_active);
+    gpio_set_func(EPD_PIN_PWR, AS_GPIO);
+    gpio_set_output_en(EPD_PIN_PWR, 1);
+    gpio_write(EPD_PIN_PWR, EPD_PWR_ACTIVE_LEVEL);
     EPD_DELAY_MS(5);
 #endif
 }
 
 void EPD_Reset(void)
 {
-    gpio_write((GPIO_PinTypeDef)g_pin_rst, 0);
+    gpio_write(EPD_PIN_RST, 0);
     EPD_DELAY_MS(EPD_RESET_PULSE_MS);
-    gpio_write((GPIO_PinTypeDef)g_pin_rst, 1);
+    gpio_write(EPD_PIN_RST, 1);
     EPD_DELAY_MS(EPD_RESET_PULSE_MS);
 }
 

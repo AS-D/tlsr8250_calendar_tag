@@ -189,19 +189,23 @@ static void s_cat(char *d, const char *s)
 /* 数字 / 农历文字                                                            */
 /* ------------------------------------------------------------------------- */
 
-/* 十进制整数转字符串，digits=0 表示不补零 */
+/* 十进制整数转字符串，digits=0 表示不补零。
+ * 上限刻意定在 5 位数字，**buf 至少 6 字节**（5 位 + '\0'）：
+ * 调用点都是 char num[6]，这样函数自己就写不到 buf 尾部之外。
+ * （原来上限 6 位时，6 位数字会让 buf[6]=0 写到第 7 个字节，越界 1 字节）*/
 static void fmt_int(char *buf, int v, int digits)
 {
     int n = 0, i, d[6];
 
     if (v < 0) v = 0;
+    if (digits > 5) digits = 5;
     do {
         d[n++] = v % 10;
         v /= 10;
-    } while (v && n < 6);
-    while (digits > n && n < 6) d[n++] = 0;        /* 补前导零 */
+    } while (v && n < 5);
+    while (digits > n && n < 5) d[n++] = 0;        /* 补前导零 */
     for (i = 0; i < n; i++) buf[i] = (char)('0' + d[n - 1 - i]);
-    buf[n] = 0;
+    buf[n] = 0;                                    /* n ≤ 5 → 最多写 buf[5] */
 }
 
 static const char *const LUNAR_MONTH[13] = {
@@ -259,19 +263,6 @@ static void civil_from_days(long z, int *py, int *pm, int *pd)
     *pd = (int)dd;
 }
 
-static long days_from_civil(int y, int m, int d)
-{
-    long era;
-    unsigned int yoe, doy, doe;
-
-    y -= (m <= 2);
-    era = (y >= 0 ? y : y - 399) / 400;
-    yoe = (unsigned int)(y - era * 400);
-    doy = (153u * (unsigned int)((m > 2) ? (m - 3) : (m + 9)) + 2) / 5 + (unsigned int)d - 1;
-    doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    return era * 146097 + (long)doe - 719468;
-}
-
 static int days_in_month(int y, int m)
 {
     static const unsigned char dim[12] = {31,28,31,30,31,30,31,31,30,31,30,31};
@@ -290,7 +281,7 @@ static int days_in_month(int y, int m)
 /* 公历月：大号数字 + 16px 月字，整体居中 */
 static void put_month(int m)
 {
-    char num[4];
+    char num[6];                    /* fmt_int 契约：≥6 字节 */
     int nw, yw, x;
 
     fmt_int(num, m, 0);
@@ -327,7 +318,7 @@ static void put_lunar(const lunar_date_t *ld)
 /* 本年第几周：周 + 大号数字 */
 static void put_week(int wk)
 {
-    char num[4];
+    char num[6];                    /* fmt_int 契约：≥6 字节 */
     int zw, nw, x;
 
     font_set(F_SMALL);
@@ -433,7 +424,7 @@ void calendar_draw(unsigned int epoch)
 
     /* 本年第几周 */
     {
-        long jan1 = days_from_civil(y, 1, 1);
+        long jan1 = lunar_days_from_civil(y, 1, 1);
         int wk = (int)((days - jan1) / 7) + 1;
         put_week(wk);
     }
