@@ -33,6 +33,8 @@ static int wait_refresh_settle(void)
         }
         WaitMs(1);
         total++;
+        /* 这 2 秒同样把 BLE 栈推一下，别让广播时序在这儿再断一次 */
+        if ((total % 50) == 0) EPD_Pump();
     }
     return total;
 }

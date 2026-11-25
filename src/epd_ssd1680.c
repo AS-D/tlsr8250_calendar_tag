@@ -12,6 +12,7 @@
  * _attribute_ram_code_, gpio_* API) are defined before our shims.           */
 #include "gpio.h"      /* Telink SDK: gpio_write / gpio_set_func / ... */
 #include "timer.h"     /* Telink SDK: WaitMs / WaitUs macros               */
+#include "lib/include/pm.h"  /* cpu_sleep_wakeup / pm_tim_recover / pm_get_32k_tick */
 #include "epd_ssd1680.h"
 #include <string.h>
 
@@ -89,15 +90,37 @@ int EPD_ReadBusyRaw(void)
     return gpio_read(EPD_PIN_BUSY) ? 1 : 0;
 }
 
-_attribute_ram_code_
+/* 刷屏等待期间的空闲钩子：应用层注册成 blc_sdk_main_loop 之后，每 50ms
+ * 醒来都会把 BLE 栈推一次，让广播在刷屏这 20 秒里不断档。*/
+static void (*s_idle_hook)(void);
+
+void EPD_SetIdleHook(void (*fn)(void)) { s_idle_hook = fn; }
+void EPD_Pump(void) { if (s_idle_hook) s_idle_hook(); }
+
+/* blt_sleep_process：SDK 的完整睡眠入口，醒来会走 blt_pm_process_sleep_wakeup
+ * 把射频/时钟重新配好。刷屏等待必须用它，不能直接用 cpu_sleep_wakeup —— 
+ * 后者只睡不恢复射频，醒来后广播根本发不出去（表现为刷屏期间手机扫不到）。*/
+extern int blt_sleep_process(void);
+
 void EPD_WaitBusy(int max_ms)
 {
     g_busy_ticks = 0;
     while (EPD_BUSY_ACTIVE_HIGH ? gpio_read(EPD_PIN_BUSY)
                               : !gpio_read(EPD_PIN_BUSY)) {
-        EPD_DELAY_MS(1);
-        g_busy_ticks++;
-        if (--max_ms <= 0) break;
+        unsigned int t0 = clock_time();
+        unsigned int dt;
+
+        /* 屏自己在刷这 20 秒，MCU 没什么事做。交给 SDK 的睡眠流程：
+         * 它会睡到下一个 BLE 事件（广播间隔约 200ms），醒来把射频重新配好，
+         * 广播继续发 —— 这样刷屏期间手机照样扫得到、也连得上。*/
+        blt_sleep_process();
+        pm_tim_recover(pm_get_32k_tick());
+
+        dt = (clock_time() - t0) / 16000u;      /* 16MHz tick -> ms */
+        if (dt == 0) dt = 1;
+        g_busy_ticks += (int)dt;
+        max_ms -= (int)dt;
+        if (max_ms <= 0) break;
     }
 }
 

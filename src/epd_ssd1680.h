@@ -48,6 +48,11 @@ extern "C" {
 int      EPD_ReadBusyRaw(void);
 int      EPD_GetBusyTicks(void);   /* ms BUSY stayed active in last refresh */
 
+/* 刷屏等待期间的空闲钩子：注册成 blc_sdk_main_loop 后，EPD_WaitBusy 每 50ms
+ * 醒来推一次 BLE 栈，广播在刷屏的 20 秒里不断档。*/
+void     EPD_SetIdleHook(void (*fn)(void));
+void     EPD_Pump(void);
+
 void     EPD_Init(void);
 void     EPD_InitGpio(void);   /* exposed for the LED-based diagnostic entry */
 void     EPD_DeInit(void);
@@ -69,9 +74,6 @@ void     EPD_Display(const uint8_t *bw, const uint8_t *red);
 void     EPD_MakePattern_TriBars(uint8_t *bw, uint8_t *red);
 void     EPD_MakePattern_Checker(uint8_t *bw, uint8_t *red);
 void     EPD_MakePattern_Invert(uint8_t *bw, uint8_t *red);
-
-/* Test entry point implemented in main.c -- call this once from user_init(). */
-void     EPD_TestMain(void);
 
 #ifdef __cplusplus
 }

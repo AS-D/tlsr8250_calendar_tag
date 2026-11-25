@@ -132,11 +132,15 @@ typedef struct {
 static int on_ts_write(u16 connHandle, void *p)
 {
     att_write_pkt_t *w = (att_write_pkt_t *)p;
-    u16 len = (u16)(w->l2capLen - 3);
+    u16 len;
     u8  *v  = &w->value;
     unsigned int epoch;
 
     (void)connHandle;
+    /* 合法包至少 opcode(1)+handle(2)+value(5)=8 字节。畸形短包先挡掉，
+     * 否则 l2capLen-3 会下溢成 655xx，绕过 len<5 检查去读越界内存。*/
+    if (w->l2capLen < 8) return 0;
+    len = (u16)(w->l2capLen - 3);
     if (len < 5 || v[0] != 0x01) return 0;
 
     epoch = (unsigned int)v[1]
@@ -268,11 +272,13 @@ void ble_app_init(void)
     rf_set_power_level_index(RF_POWER_P0dBm);
 
     /* ── 功率管理 ─────────────────────────────────────────────────────── */
-    /* 这里有三种活动时不进入 suspend：广播、扫描、主机连接。
-     * 我们是纯从机，扫描/主机其实用不到，但 SDK 内部 IDLE 状态会用到这两个标志，
-     * 保留它们不影响功耗（没有实际扫描/连接时不会阻止睡眠）。 */
+    /* mask 的每一位表示"这种活动期间允许进 suspend"。我们是纯从机：
+     *   LEG_ADV    —— 广播间隙必须允许睡眠，否则每 200ms 就一次全程唤醒
+     *   ACL_SLAVE  —— **从机连接期间**允许睡眠。原来这里写的是 ACL_MASTER，
+     *                 是从主机模板抄错的：这颗芯片只做从机，那个位永远不会命中，
+     *                 等于连接期间全程 ~3mA 空转、一天吃掉 90mAh 以上。*/
     blc_ll_initPowerManagement_module();
-    blc_pm_setSleepMask(PM_SLEEP_LEG_ADV | PM_SLEEP_LEG_SCAN | PM_SLEEP_ACL_MASTER);
+    blc_pm_setSleepMask(PM_SLEEP_LEG_ADV | PM_SLEEP_ACL_SLAVE);
     blc_ll_registerTelinkControllerEventCallback(BLT_EV_FLAG_SUSPEND_EXIT, &on_suspend_exit);
 
     blc_ll_setAdvEnable(BLC_ADV_ENABLE);
