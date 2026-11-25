@@ -161,8 +161,10 @@ void EPD_InitGpio(void)
 #if EPD_USE_PWR_PIN
     gpio_set_func(EPD_PIN_PWR, AS_GPIO);
     gpio_set_output_en(EPD_PIN_PWR, 1);
+    /* P-channel LOW = rail ON.  Give the boost (L150/D150/D151) time to
+     * charge C153 before the controller is reset / addressed. */
     gpio_write(EPD_PIN_PWR, EPD_PWR_ACTIVE_LEVEL);
-    EPD_DELAY_MS(5);
+    EPD_DELAY_MS(20);
 #endif
 }
 
@@ -275,6 +277,13 @@ void EPD_DeInit(void)
 {
     EPD_WriteCmd(0x10);        /* deep sleep */
     EPD_WriteData(0x01);
+    EPD_DELAY_MS(2);           /* let 0x10 land before cutting the rail */
+
+#if EPD_USE_PWR_PIN
+    /* P-channel HIGH = rail OFF: kill the whole boost, not just the
+     * controller's deep sleep.  This is the big idle-current saving. */
+    gpio_write(EPD_PIN_PWR, !EPD_PWR_ACTIVE_LEVEL);
+#endif
 }
 
 /* ------------------------------------------------------------------------- */

@@ -22,10 +22,15 @@
  *  illegal pins (PB3/PB2/PB0/PA6 do not exist on this package) — that was the
  *  root cause of all blank-screen builds.  This config uses ONLY measured pins.
  *
- *  PWR / BS1 were NOT traced.  The board has an on-board boost circuit
- *  (L7 inductor + D150/D151 + caps next to the FPC), so the panel supply and
- *  the 4-wire-SPI select are almost certainly hardware-fixed.  We therefore
- *  DISABLE GPIO control of PWR/BS1 (below) instead of touching unknown pins.
+ *  PWR was traced 2026-11-25: PB1 --R10--> Q3 gate.
+ *  Q3 = A1SHB (PW2301A), a P-channel MOSFET; source to battery+, drain feeds
+ *  the on-board boost (L150/D150/D151 + caps).  Gate LOW turns the panel
+ *  supply ON, gate HIGH turns it OFF.  PB1 is a legal QFN32 GPIO (pin 6) and
+ *  was previously unused, so we can now cut the boost rail completely in
+ *  standby instead of letting it run 24/7.
+ *
+ *  BS1 was NOT traced; standard 24-pin modules hard-wire 4-wire SPI, so
+ *  GPIO control of BS1 stays disabled.
  * ============================================================================
  */
 #ifndef __EPD_CONF_H__
@@ -72,14 +77,16 @@
 #define EPD_PIN_RST     GPIO_PA1    /* FPC pin10 RES -> chip pin4 (active lo)*/
 #define EPD_PIN_BUSY    GPIO_PA0    /* FPC pin9  BUSY-> chip pin3            */
 
-/* Panel supply: NOT traced.  The FPC socket has an on-board boost circuit
- * (L7 + D150/D151 + caps), so the EPD rail is almost certainly hardware-on.
- * We DISABLE software control to avoid driving an unknown pin.  If the panel
- * still does nothing, this is the FIRST thing to revisit (find which GPIO, if
- * any, enables the boost).                                                    */
-#define EPD_USE_PWR_PIN   0
-#define EPD_PIN_PWR       GPIO_PB5
-#define EPD_PWR_ACTIVE_LEVEL  0
+/* Panel supply switch -- TRACED 2026-11-25.
+ * PB1 -> R10 -> Q3 gate.  Q3 = A1SHB / PW2301A P-channel MOSFET:
+ *   source = battery+, drain = boost input, gate low = ON, high = OFF.
+ * PB1 is QFN32 pin 6 (PWM4/UART_TX/sar_aio), legal and previously unused.
+ * Enabling this lets us kill the boost rail after each refresh: EPD_InitGpio
+ * drives it low (ON) before init; EPD_DeInit drives it high (OFF) after sleep.
+ * If a board turns out to differ, set EPD_USE_PWR_PIN back to 0 to revert.   */
+#define EPD_USE_PWR_PIN   1
+#define EPD_PIN_PWR       GPIO_PB1
+#define EPD_PWR_ACTIVE_LEVEL  0     /* P-channel: LOW enables the rail        */
 
 /* BS1 interface select: NOT traced.  Standard 24-pin 2.13" modules hard-wire
  * BS1 to select 4-wire SPI on the module itself.  Disable GPIO control.      */
